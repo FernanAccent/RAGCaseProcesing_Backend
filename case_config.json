@@ -1,0 +1,51 @@
+{
+    "VODC7-1": {
+      "cr_name": "Request to Confirm Delivery/Delivery Confirmation",
+      "resolution_steps": "1. Confirm if minimum requirements are included. (PAID/ALID, Network Name or Provider ID, Partner Studio Access)\n2. If partner/delivery vendor has Studio Access, route them to Studio to confirm delivery. Close Case as Solution Offered\n3. If partner/delivery vendor don't have access or push back due to urgency proceed to step 4\n4. Identify Network Name and whether its YTV/PTC or both (this is identified by operator using Network Name in Octopus). If PTC or both, operator should go to Corpus Quality Dashboard for required region. If title is on YTV only Jump to step 7.\n5. For titles on PTC or both, filter network in Corpus Quality dashboard, and click on analysis for catalog details for required region.\n6. Search for PAID/ALID to be confirmed. If no errors found, go to Hades\n7. Search for title in hades using PAID/ALID\n8. If program page for title is present check the Hades Program Page of the title. Verify ingested metadata accuracy, video playback and availability window. If no errors found, confirm with partner that title was ingested successfully.\n9. If no program page exists, check CAP for ingestion errors. Share errors with partner to be fixed and redo steps when MDU is delivered.",
+      "canned_response": "Hi [POC/Network Team],\n\nFor more information on the status of your deliveries, please navigate to the Programs tab in Studio Content Manager.\nBest,\n[Alias], [Team]",
+      "required_fields": ["Title", "PAID/ALID", "Network Name or Provider ID"],
+      "check_partner_access": true
+    },
+    "VODC7-2": {
+      "cr_name": "Request to MDU Delivery/MDU Confirmation",
+      "resolution_steps": "1. Confirm if minimum requirements are included. (PAID/ALID, Network Name or Provider ID, Partner Studio Access)\n2. If partner/delivery vendor has Studio Access, route them to Studio to confirm delivery. Close Case as Solution Offered\n3. If partner/delivery vendor don't have access or push back due to urgency proceed to step 4\n4. Identify Network Name and whether its YTV/PTC or both (this is identified by operator using Network Name in Octopus). If PTC or both, operator should go to Corpus Quality Dashboard for required region. If title is on YTV only Jump to step 7.\n5. For titles on PTC or both, filter network in Corpus Quality dashboard, and click on analysis for catalog details for required region.\n6. Search for PAID/ALID to be confirmed. If no errors found, go to Hades\n7. Search for title in hades using PAID/ALID\n8. If program page for title is present check the Hades Program Page of the title. Verify ingested metadata accuracy, video playback and availability window. If no errors found, confirm with partner that title was ingested successfully.\n9. If no program page exists, check CAP for ingestion errors. Share errors with partner to be fixed and redo steps when MDU is delivered.",
+      "canned_response": "Hi [POC/Network Team],\n\nFor more information on the status of your deliveries, please navigate to the Programs tab in Studio Content Manager.\nBest,\n[Alias], [Team]",
+      "required_fields": ["Title", "PAID/ALID", "Network Name or Provider ID"],
+      "check_partner_access": true
+    },
+    "VODC7-3": {
+      "cr_name": "Missing VOD",
+      "resolution_steps": "1. Locate the PAID/ALID in email.\n2. Identify Network Name in email and confirm using Octopus\n3. Check PTC/YTV to see if title is truly missing from platform\n4. Go to Corpus Quality Dash and filter network. Go to Analysis and locate PAID/ALID\n5. Troubleshoot any outstanding CQ errors prohibiting title from being live on platform\n6. Respond to partner suggesting fixes for any partner actionables. Escalate through Bug to SvM if it is Ops or internally actionable or out of scope",
+      "canned_response": "VODJ7\n\nHi [POC Name/Network Team], \n\nThanks for reaching out.\n\nAll the details related to viewers, subscriptions, audiences, or revenue analytics are available in this Help Center article.\n\nIf you have any trouble navigating the Studio, have questions on this, or would like a demo of the feature, please reach out to your Partner Engagement Manager.\n\nBest,\n[Alias], [Team]",
+      "required_fields": ["Title", "PAID/ALID", "Network Name or Provider ID"],
+      "check_partner_access": false
+    },
+    "VODG9": {
+      "cr_name": "Video Playback Error / Transcode Error",
+      "resolution_steps": "1. Confirm if minimum requirements are included. (PAID/ALID, Network Name or Provider ID, Partner Studio Access)\n2. Search for title in Hades using PAID/ALID. Go to regional program page impacted by video playback/transcode error\n3. Confirm if error exists by checking video card and Transcoding Outcome.\n4. If error is present, go to go/media-validator-dashboard to identify type of error impacting the video.\n5. Using Transcoding Failures table identify error reason and fix listed in 'Venom Failure Reason' column\n6. If reason is 'Unknown' create a bug for SvM using this template\n7. If reason is outlined, reach out to partner with reason for video playback/transcode issue and request MDU with fix.\n8. Once bug is created, monitor the escalation and suggested fix. Relay information to partner per FTE guidance and request MDU with fix.",
+      "canned_response": "Hi [POC Name/Network Team],\n\nThanks for reaching out.\n\nYou can navigate your Content Updates Manager to check the status of your deliveries.\nAdditionally, you can check out our Help Center article for more information on errors, warnings and recommended fixes.\n\nIf the issues are not listed as part of the Help Center article linked above, or if the suggested fixes are not helpful, please reach back to us.\n\nBest,\n[Alias], [Team]",
+      "required_fields": ["Title", "PAID/ALID", "Network Name or Provider ID"],
+      "check_partner_access": true
+    },
+    "VODB6": {
+      "cr_name": "Manifest Issues - Partner Actionable Errors / Partner Actionable Errors Workflow",
+      "resolution_steps": "1. Locate PAID/ALID in email.\n2. Identify Network Name in email and confirm using Octopus\n3. Go to Corpus Quality Dash and filter network. Go to Analysis and locate PAID/ALID\n5. Troubleshoot any outstanding CQ errors prohibiting title from being live on platform\n6. Respond to partner suggesting fixes for any partner actionables. Escalate through Bug to SvM if it is Ops or internally actionable or out of scope",
+      "canned_response": "Hi [POC/Network Team],\n\nThanks for sending the manifest. It has been successfully integrated into our system.\nHowever, we noticed some errors during analysis.\n\nThe “Manifests” tab within your Content Updates Manager provides the ability to export a manifest analysis report, where you check any undelivered content and errors outlined. Please refer to the Understand Manifest Analysis Issues section for further details on this, and the suggested fixes.\n\nBest,\n[Alias], [Team]",
+      "required_fields": ["Title", "PAID/ALID", "Network Name or Provider ID"],
+      "check_partner_access": false
+    },
+    "VODE6": {
+      "cr_name": "Takedown notice / Request to Takedown VOD Content",
+      "resolution_steps": "1. Search title in Hades using PAID/ALID in email.\n2. Identify Network Name in email and confirm using Octopus\n3. Confirm if partner made delivery to update availability window date in Hades matches the request in case\n4. If changes made through partners MDU are applied as intended, confirm with partner changes have gone through successfully.\n5. If changes made through partners MDU are NOT applied as intended, check if manual edit was made historically prohibiting the MDU changes\n6. If 5 is true, create a bug for Watchability to make a new manual edit per case request to update availability window\n7. Confirm with partner the changed made and close case",
+      "canned_response": "Hi [POC/Network Team],\n\nThanks for reaching out.\n\nTo proceed with the take-down of [PAID], submit a metadata update changing the availability windows to a date in the past to expire the content.\nAdditionally, please submit an updated manifest with “Full Delete” in column “EntryType” for the respective entry line item.\n\nYou can track the status of the MDU in your Content Updates Manager.\n\nBest,\n[Alias], [Team]",
+      "required_fields": ["Title", "PAID/ALID", "Network Name or Provider ID"],
+      "check_partner_access": false
+    },
+    "VODJ7": {
+      "cr_name": "Questions related to Analytics in the Studio",
+      "resolution_steps": "1. Identify Network Name in email and confirm using Octopus\n2. check go/pem-assignments to confirm if partner has access to Studio. If so, provide HC articles and guidance for Studio\n3. If partner of third party delivery vendor does not have access to Studio, provide HC articles and troubleshoot issues for the partner/delivery vendor",
+      "canned_response": "Hi [POC Name/Network Team], \n\nThanks for reaching out.\n\nAll the details related to viewers, subscriptions, audiences, or revenue analytics are available in this Help Center article.\n\nIf you have any trouble navigating the Studio, have questions on this, or would like a demo of the feature, please reach out to your Partner Engagement Manager.\n\nBest,\n[Alias], [Team]",
+      "required_fields": ["Network Name"],
+      "check_partner_access": true
+    }
+  }

@@ -21,15 +21,13 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
 
+# Dependency to get the current database session
 def get_db():
-    """
-    Dependency function to get the SQLAlchemy session for the ORM.
-    """
-    db = SessionLocal()
+    db = SessionLocal()  # Create a new session
     try:
-        yield db
+        return db  # Return the session
     finally:
-        db.close()
+        db.close()  # Ensure session is closed after use
 
 def getconn():
     """

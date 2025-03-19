@@ -1,9 +1,9 @@
 from flask import Flask, request, jsonify
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
-from utils import clean_html_content, check_email_fields, extract_case_info, get_canned_response, generate_actionable_response, get_case_type_scenarios, process_assets, extract_asset_details, validate_asset
-from vertex_ai import process_email_content,generate_operator_response,summarize_case_log
-import uuid
+from utils import retrieve_resolution_steps,get_canned_response, check_partner_access, get_required_fields
+from vertex_ai import process_email_content,generate_operator_response,summarize_case_log,extract_case_and_asset_details
+import uuid, json
 
 app = Flask(__name__)
 
@@ -12,6 +12,14 @@ CORS(app, origins=["http://localhost:4200"], supports_credentials=True)  # Allow
 
 # Setup Flask-SocketIO with CORS allowed for frontend
 socketio = SocketIO(app, cors_allowed_origins="http://localhost:4200")  # Allow CORS for WebSocket connections
+
+# Load configuration file with case details
+with open('case_config.json', encoding='utf-8') as config_file:
+    case_config = json.load(config_file)
+
+# Load configuration file with mock partner table
+with open('mock_partner_table.json', encoding='utf-8') as config_file:
+    partners_config = json.load(config_file)
 
 @app.route('/process_email', methods=['POST'])
 def process_email():
@@ -38,137 +46,306 @@ def process_email():
     case_type = result["case_type"]
     print(f"Case Type: {case_type}")  # For debugging purpose
 
-    # Step 5: Handle unsupported case types and respond with canned response
-    if case_type not in ['VODC7', 'VODG9', 'VODB6', 'VODE6', 'VODJ7']:
-        scenario = "Unsupported Case Response"
-        canned_response = get_canned_response("General", scenario)
-        if not canned_response:
-            canned_response = "The case type is not supported in the current release."  # Default message if no canned response is found
-    else:
-        scenario = "Successful Operation Response"
-        canned_response = get_canned_response(case_type, scenario)
-        if not canned_response:
-            canned_response = f"No canned response found for {case_type} and scenario {scenario}"
-
-    # Step 6: Check if required fields are missing
-    required_fields = ["PEM", "Partner POC", "To", "CC"]
-    missing_fields = check_email_fields(email_data, required_fields)
-    if missing_fields:
-        response = generate_actionable_response("Partner", f"Missing required fields: {', '.join(missing_fields)}")
-        return jsonify({"message": response})
-
-    # Step 7: Extract case details
-    case_details = extract_case_info(content)
-
-    # Step 8: Asset validation based on case type
-   # asset_validation_result = validate_asset(case_details["assets"])
-   # if not asset_validation_result["valid"]:
-   #     response = generate_actionable_response("Partner", "Asset validation failed.")
-   #     return jsonify({"message": response})
-
-    # Step 9: Retrieve and process resolution steps from Case Type Scenarios
-    valid_assets, invalid_assets, successful_output_list, unsuccessful_output_list = process_assets(case_details, case_type)
-
-    # Step 10: Extract Category, Package ID, Network ID, AL ID, and Partner ID from the first asset
-    first_asset = case_details["assets"][0] if case_details["assets"] else None
-    asset_details = extract_asset_details(first_asset)
-
-    # Step 11: Summarize the case log
+    # Step 5: LLM Summarize the case log
     case_summary = summarize_case_log(cleaned_content)
 
-    # Step 12: Generate actionable response based on the unstructured data (case details)
-    operator_response = generate_operator_response(case_summary)
+    # Step 6: LLM extract essential details from cleaned content
+    extracted_data = extract_case_and_asset_details(cleaned_content)
+    print(f"Extracted Data:\n {extracted_data}") # for debugging purpose
 
-    # Step 13: Generate responses based on lists
-    partner_response = ""
-    if invalid_assets:
-        partner_response = generate_actionable_response("Partner", "Assets not found")
-    elif valid_assets:
-        partner_response = generate_actionable_response("Partner", "Assets processed successfully")
+    # Step 1: Extract data from the frontend input (from Chrome Extension)
+    is_regenerate = request.json.get('isRegenerate', 'false')
+    if is_regenerate:
+        case_log = request.json.get('case_log')  # {"case_number", "case_title", "email_content"}
+        case_type = request.json.get('category')  # "VODC7-2", etc.
+        package_id = request.json.get('package_id')
+        network_id = request.json.get('network_id')
+        alid = request.json.get('alid')
+        partner_id = request.json.get('partner_id')
+    else:
+        # case_log= case_summary
+        if case_type in ['VODC7-1', 'VODC7-2', 'VODC7-3']:
+            category = 'VODC7'
+        elif case_type in ['VODG9', 'VODB6', 'VODE6', 'VODJ7']:
+            category = case_type
 
-    # Step 14: Return the responses and logs
+        package_id = extracted_data.get("Package ID", "Not Found")
+        network_id = extracted_data.get("Network ID", "Not Found")
+        alid = extracted_data.get("ALID", "Not Found")
+        partner_id = extracted_data.get("Partner ID", "Not Found")
+
+    # Initialize a list to store the missing fields
+    missing_fields = []
+    asset_link_list = []    
+    # Step 7: Handle unsupported case types and respond with canned response
+    partner_actionable_response = ""  # Initialize the variable before using it
+    if case_type not in ['VODC7-1', 'VODC7-2', 'VODC7-3','VODG9', 'VODB6', 'VODE6', 'VODJ7']:
+        operator_actionable_response = generate_operator_response(case_summary)
+        partner_actionable_response = "General Query Response"
+        return jsonify({"message": operator_actionable_response})
+    else:
+        # If case type is valid, retrieve resolution steps from the database
+        resolution_steps = retrieve_resolution_steps(case_type)
+
+        # Build the operator actionable response based on the resolution steps
+        operator_actionable_response = f"Resolution Steps:\n {resolution_steps}"
+        if not is_regenerate:
+            if check_partner_access(case_type):
+                # Assuming  ‘Content Delivery Enabled’ and ‘Programs and Manifest Enabled’ are in mock_partner_table
+                if partner_id in partners_config:
+                    partner_data = partners_config[partner_id]
+                    # Step 3: Check if 'Content Delivery Enabled' and 'Programs and Manifest Enabled' are both true
+                    if partner_data.get('Content Delivery Enabled') == True and partner_data.get('Programs and Manifest Enabled') == True:
+                        # Step 4: Generate the canned response [Unsupported Partner Response]
+                        partner_actionable_response = "Unsupported Partner Response: Partner should use the Studio based on case type."
+                        return jsonify({
+                            "case_number": case_number,
+                            "case_title": case_title,
+                            "category": case_type,
+                            "package_id": package_id,
+                            "network_id": network_id,
+                            "alid": alid,
+                            "partner_id": partner_id,
+                            "response_id1": "Response id 1",
+                            "case_summary": case_summary,
+                            "response_id2": "Response id 2",
+                            "operator_response": operator_actionable_response,
+                            "response_id3": "Response id 3",
+                            "partner_response": partner_actionable_response
+                        })
+        
+        
+        asset_details= extracted_data[asset_details]
+
+        # Loop through each asset and check required fields
+        for asset in asset_details:
+            # Retrieve the required fields for the case type
+            case_required_fields = get_required_fields(case_type)
+
+            # Check if required fields are provided and not empty
+            if case_required_fields and case_required_fields != "":
+                # Iterate through each required field and check the conditions
+                for required_field in case_required_fields:
+                    # Handle cases where we need to check either PAID/ALID or Network Name/Provider ID
+                    if required_field in ["PAID/ALID", "Network Name or Provider ID"]:
+                        # Check if at least one of the subfields is filled in
+                        if required_field == "PAID/ALID":
+                            alid = extracted_data.get("alid", "")
+                            paid = extracted_data.get("paid", "")
+                        # If both ALID and PAID are empty or null, consider it missing
+                        if not alid and not paid:
+                            missing_fields.append("PAID/ALID")
+                        elif required_field == "Network Name or Provider ID":
+                                network_id = extracted_data.get("network_id", "")
+                                provider_id = extracted_data.get("provider_id", "")
+                                # If both Network Name and Provider ID are empty or null, consider it missing
+                                if not network_id and not provider_id:
+                                    missing_fields.append("Network Name or Provider ID")
+                    else:
+                        # For other fields, simply check if they are empty or null
+                        if not extracted_data.get(required_field, ""):
+                            missing_fields.append(required_field)
+
+                # Output the missing fields if any
+                if missing_fields:
+                    print(f"Missing Fields: {missing_fields}")
+                    partner_actionable_response += f"Missing Fields Response: {asset} {missing_fields} \n"
+                else:
+                    print("All required fields are present.")
+                    asset_link = f"https://hades.corp.google.com/cms/entity_type_program/{asset['source_asset_id']}/details"
+                    asset_link_list.append(asset_link)
+                    canned_response = get_canned_response(case_type) 
+                    partner_actionable_response += canned_response
+
+    # Check for missing fields and add to the missing_fields list if "Not Found"
+    case_number = extracted_data.get("case_number", "Not Found")
+    case_title = extracted_data.get("case_title", "Not Found")
+    package_id = extracted_data.get("Package ID", "Not Found")
+    network_id = extracted_data.get("Network ID", "Not Found")
+    alid = extracted_data.get("ALID", "Not Found")
+    partner_id = extracted_data.get("Partner ID", "Not Found")
+ 
     return jsonify({
-        "case_number": case_details["case_number"],
-        "case_title": case_details["case_title"],
-        "partner_response": partner_response,
-        "operator_response": operator_response,
-        "valid_asset_list": valid_assets,
-        "invalid_asset_list": invalid_assets,
-        "successful_output_list": successful_output_list,
-        "unsuccessful_output_list": unsuccessful_output_list,
-        "asset_details": asset_details,
+        "case_number": case_number,
+        "case_title": case_title,
+        "category": category,
+        "package_id": package_id,
+        "network_id": network_id,
+        "alid": alid,
+        "partner_id": partner_id,
+        "response_id1": "Response id 1",
         "case_summary": case_summary,
-        "message": canned_response
+        "response_id2": "Response id 2",
+        "operator_response": operator_actionable_response,
+        "response_id3": "Response id 3",
+        "partner_response": partner_actionable_response,
+        "asset_link": asset_link_list
     })
 
 # SocketIO event handling
 @socketio.on('process_email_event')
 def handle_process_email(data):
+    # Step 1: Extract email data from the data argument
     email_data = data.get('email_data')
 
     if not email_data:
-        emit('response', {'message': 'No email data provided.'})
+        emit('process_email_response', {"error": "No email data provided."})
         return
 
-    # Ensure the email contains the 'content' field
+    # Step 2: Ensure the email contains the 'content' field
     content = email_data.get('content')
     if not content:
-        emit('response', {'message': "'content' field is missing in email data."})
+        emit('process_email_response', {"error": "'content' field is missing in email data."})
         return
 
-    # Processing the email as before
-    system_instruction_file = r"C:\Users\fernan.flores\OneDrive - Accenture\Documents\Case Log Summary (First Email).txt"
+    # Step 3: Read the system instruction from the file and process the email content
+    system_instruction_file = r"C:\Users\fernan.flores\OneDrive - Accenture\Documents\Case Log Summary (First Email).txt"  # Provide the correct file path
 
-    # Call the vertex_ai function to process the email content and return cleaned content and case type
     result = process_email_content(email_data, system_instruction_file)
     if "error" in result:
-        emit('response', {'message': result["error"]})
+        emit('process_email_response', {"error": result["error"]})
         return
 
+    # Step 4: Extract cleaned content and case type
     cleaned_content = result["cleaned_content"]
     case_type = result["case_type"]
+    print(f"Case Type: {case_type}")  # For debugging purpose
 
-    # Handle unsupported case types
-    if case_type not in ['VODC7', 'VODG9', 'VODB6', 'VODE6', 'VODJ7']:
-        canned_response = get_canned_response(case_type, "Unsupported Case Response")
-        emit('response', {'message': canned_response})
+    # Step 5: LLM Summarize the case log
+    case_summary = summarize_case_log(cleaned_content)
+
+    # Step 6: LLM extract essential details from cleaned content
+    extracted_data = extract_case_and_asset_details(cleaned_content)
+    print(f"Extracted Data:\n {extracted_data}")  # For debugging purpose
+
+    # Step 1: Extract data from the frontend input (from Chrome Extension)
+    is_regenerate = data.get('isRegenerate', 'false')
+    if is_regenerate:
+        case_log = data.get('case_log')  # {"case_number", "case_title", "email_content"}
+        case_type = data.get('category')  # "VODC7-2", etc.
+        package_id = data.get('package_id')
+        network_id = data.get('network_id')
+        alid = data.get('alid')
+        partner_id = data.get('partner_id')
+    else:
+        if case_type in ['VODC7-1', 'VODC7-2', 'VODC7-3']:
+            category = 'VODC7'
+        elif case_type in ['VODG9', 'VODB6', 'VODE6', 'VODJ7']:
+            category = case_type
+
+        package_id = extracted_data.get("Package ID", "Not Found")
+        network_id = extracted_data.get("Network ID", "Not Found")
+        alid = extracted_data.get("ALID", "Not Found")
+        partner_id = extracted_data.get("Partner ID", "Not Found")
+
+    # Initialize a list to store the missing fields
+    missing_fields = []
+    asset_link_list = []
+    partner_actionable_response = ""  # Initialize the variable before using it
+
+    if case_type not in ['VODC7-1', 'VODC7-2', 'VODC7-3', 'VODG9', 'VODB6', 'VODE6', 'VODJ7']:
+        operator_actionable_response = generate_operator_response(case_summary)
+        partner_actionable_response = "General Query Response"
+        emit('process_email_response', {"message": operator_actionable_response})
         return
 
-    required_fields = ["PEM", "Partner POC", "To", "CC"]
-    missing_fields = check_email_fields(email_data, required_fields)
-    if missing_fields:
-        response = generate_actionable_response("Partner", f"Missing required fields: {', '.join(missing_fields)}")
-        emit('response', {'message': response})
-        return
+    else:
+        # If case type is valid, retrieve resolution steps from the database
+        resolution_steps = retrieve_resolution_steps(case_type)
 
-    case_details = extract_case_info(content)
-    #asset_validation_result = validate_asset(case_details["assets"])
-    #if not asset_validation_result["valid"]:
-    #    response = generate_actionable_response("Partner", "Asset validation failed.")
-    #    emit('response', {'message': response})
-    #    return
+        # Build the operator actionable response based on the resolution steps
+        operator_actionable_response = f"Resolution Steps:\n {resolution_steps}"
+        if not is_regenerate:
+            if check_partner_access(case_type):
+                # Assuming ‘Content Delivery Enabled’ and ‘Programs and Manifest Enabled’ are in mock_partner_table
+                if partner_id in partners_config:
+                    partner_data = partners_config[partner_id]
+                    # Step 3: Check if 'Content Delivery Enabled' and 'Programs and Manifest Enabled' are both true
+                    if partner_data.get('Content Delivery Enabled') == True and partner_data.get('Programs and Manifest Enabled') == True:
+                        # Step 4: Generate the canned response [Unsupported Partner Response]
+                        partner_actionable_response = "Unsupported Partner Response: Partner should use the Studio based on case type."
+                        emit('process_email_response', {
+                            "case_number": extracted_data.get("case_number", "Not Found"),
+                            "case_title": extracted_data.get("case_title", "Not Found"),
+                            "category": case_type,
+                            "package_id": package_id,
+                            "network_id": network_id,
+                            "alid": alid,
+                            "partner_id": partner_id,
+                            "response_id1": "Response id 1",
+                            "case_summary": case_summary,
+                            "response_id2": "Response id 2",
+                            "operator_response": operator_actionable_response,
+                            "response_id3": "Response id 3",
+                            "partner_response": partner_actionable_response
+                        })
+                        return
+        
+        asset_details = extracted_data.get("asset_details", [])
 
-    # Process assets based on resolution steps
-    valid_assets, invalid_assets, successful_output_list, unsuccessful_output_list = process_assets(case_details, case_type)
+        # Loop through each asset and check required fields
+        for asset in asset_details:
+            # Retrieve the required fields for the case type
+            case_required_fields = get_required_fields(case_type)
 
-    partner_response = ""
-    if invalid_assets:
-        partner_response = generate_actionable_response("Partner", "Assets not found")
-    elif valid_assets:
-        partner_response = generate_actionable_response("Partner", "Assets processed successfully")
+            # Check if required fields are provided and not empty
+            if case_required_fields and case_required_fields != "":
+                # Iterate through each required field and check the conditions
+                for required_field in case_required_fields:
+                    # Handle cases where we need to check either PAID/ALID or Network Name/Provider ID
+                    if required_field in ["PAID/ALID", "Network Name or Provider ID"]:
+                        # Check if at least one of the subfields is filled in
+                        if required_field == "PAID/ALID":
+                            alid = extracted_data.get("alid", "")
+                            paid = extracted_data.get("paid", "")
+                        # If both ALID and PAID are empty or null, consider it missing
+                        if not alid and not paid:
+                            missing_fields.append("PAID/ALID")
+                        elif required_field == "Network Name or Provider ID":
+                                network_id = extracted_data.get("network_id", "")
+                                provider_id = extracted_data.get("provider_id", "")
+                                # If both Network Name and Provider ID are empty or null, consider it missing
+                                if not network_id and not provider_id:
+                                    missing_fields.append("Network Name or Provider ID")
+                    else:
+                        # For other fields, simply check if they are empty or null
+                        if not extracted_data.get(required_field, ""):
+                            missing_fields.append(required_field)
 
-    operator_response = generate_operator_response(cleaned_content)
+                # Output the missing fields if any
+                if missing_fields:
+                    print(f"Missing Fields: {missing_fields}")
+                    partner_actionable_response += f"Missing Fields Response: {asset} {missing_fields} \n"
+                else:
+                    print("All required fields are present.")
+                    asset_link = f"https://hades.corp.google.com/cms/entity_type_program/{asset['source_asset_id']}/details"
+                    asset_link_list.append(asset_link)
+                    canned_response = get_canned_response(case_type) 
+                    partner_actionable_response += canned_response
 
-    # Emit the results back to the client
-    emit('response', {
-        "case_number": case_details["case_number"],
-        "case_title": case_details["case_title"],
-        "partner_response": partner_response,
-        "operator_response": operator_response,
-        "valid_asset_list": valid_assets,
-        "invalid_asset_list": invalid_assets,
-        "successful_output_list": successful_output_list,
-        "unsuccessful_output_list": unsuccessful_output_list
+    # Check for missing fields and add to the missing_fields list if "Not Found"
+    case_number = extracted_data.get("case_number", "Not Found")
+    case_title = extracted_data.get("case_title", "Not Found")
+    package_id = extracted_data.get("Package ID", "Not Found")
+    network_id = extracted_data.get("Network ID", "Not Found")
+    alid = extracted_data.get("ALID", "Not Found")
+    partner_id = extracted_data.get("Partner ID", "Not Found")
+
+    emit('process_email_response', {
+        "case_number": case_number,
+        "case_title": case_title,
+        "category": category,
+        "package_id": package_id,
+        "network_id": network_id,
+        "alid": alid,
+        "partner_id": partner_id,
+        "response_id1": "Response id 1",
+        "case_summary": case_summary,
+        "response_id2": "Response id 2",
+        "operator_response": operator_actionable_response,
+        "response_id3": "Response id 3",
+        "partner_response": partner_actionable_response,
+        "asset_link": asset_link_list
     })
 
 if __name__ == '__main__':

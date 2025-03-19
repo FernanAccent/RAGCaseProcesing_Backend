@@ -1,0 +1,44 @@
+{
+    "partner_id-1": {
+      "partner_name": "Warner Bros. Discovery",
+      "partner_segment": "",
+      "content_delivery_enabled": true,
+      "programs_and_manifest_enabled": true
+    },
+    "partner_id-2": {
+      "partner_name": "Warner Sisters Discovery",
+      "partner_segment": "",
+      "content_delivery_enabled": true,
+      "programs_and_manifest_enabled": false
+    },
+    "partner_id-3": {
+      "partner_name": "Warner",
+      "partner_segment": "",
+      "content_delivery_enabled": true,
+      "programs_and_manifest_enabled": true
+    },
+    "partner_id-4": {
+      "partner_name": "Warn",
+      "partner_segment": "",
+      "content_delivery_enabled": true,
+      "programs_and_manifest_enabled": false
+    },
+    "partner_id-5": {
+      "partner_name": "War",
+      "partner_segment": "",
+      "content_delivery_enabled": true,
+      "programs_and_manifest_enabled": true
+    },
+    "partner_id-6": {
+      "partner_name": "Warren Studio",
+      "partner_segment": "",
+      "content_delivery_enabled": true,
+      "programs_and_manifest_enabled": false
+    },
+    "partner_id-7": {
+      "partner_name": "War Freak Studio",
+      "partner_segment": "",
+      "content_delivery_enabled": true,
+      "programs_and_manifest_enabled": true
+    }
+  }

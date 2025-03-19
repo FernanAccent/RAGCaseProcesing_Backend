@@ -1,4 +1,4 @@
-import os
+import os, re
 from google import genai
 from google.genai import types
 from google.genai.types import GenerateContentConfig, HttpOptions
@@ -131,29 +131,6 @@ def call_model(prompt: str) -> str:
         )
     )
 
-
-        """
-        contents = [
-            types.Content(
-                role="user",
-                parts=[types.Part.from_text(text=prompt)]
-            )
-        ]
-
-
-        # Call the model and process the response stream
-        for chunk in client.models.generate_content_stream(
-            model=config.MODEL_ID,
-            contents=contents,
-            config=types.GenerateContentConfig(
-                temperature=1,
-                top_p=0.95,
-                max_output_tokens=8192,
-                response_modalities=["TEXT"]
-            )
-        ):
-            cleaned_content = chunk.text.strip()"""
-
         # Print the full response to inspect the structure
         print(f"Full response: {cleaned_content_response}")
         
@@ -186,13 +163,17 @@ def categorize_case_with_genai(cleaned_content: str) -> str:
     You are an intelligent assistant that categorizes case types based on the content of the email provided.
     The possible valid case types are:
 
-    1. VODC7
-    2. VODG9
-    3. VODB6
-    4. VODE6
-    5. VODJ7
+    VODC7-1, VODC7-2, VODC7-3,  VODG9, VODB6, VODE6, VODJ7
 
-    If the content of the email matches any of these case types, return that case type. 
+    1. VODC7-1 if the case is related to Request to Confirm Delivery/Delivery Confirmation
+    2. VODC7-2 if the case is related to Request to MDU Delivery/MDU Confirmation
+    3. VODC7-3 if the case is related to Missing VOD
+    4. VODG9 if the case is related to Video Playback Error / Transcode Error
+    5. VODB6 if the case is related to Manifest Issues - Partner Actionable Errors / Partner Actionable Errors Workflow
+    6. VODE6 if the case is related to Takedown notice / Request to Takedown VOD Content
+    7. VODJ7 if the case is related to Questions related to Analytics in the Studio
+
+    If the content of the email or inputs matches any of these case types, return that case type. 
     If no match is found, return 'General'. 
     Please identify the case type based on the content and respond with the correct case type.
     """
@@ -212,8 +193,6 @@ def categorize_case_with_genai(cleaned_content: str) -> str:
         )
     ]
    
-    # Create a request for generating content based on the system instruction and email content
-    #prompt = f"{system_instruction}\n\nContent: {cleaned_content}\n\nCase Type:"
     
     # Call Google GenAI to get the case type based on the prompt
     try:
@@ -234,7 +213,7 @@ def categorize_case_with_genai(cleaned_content: str) -> str:
         case_type = response.candidates[0].content.parts[0].text.strip()
 
         # Validate the case type, if it's not in the allowed list, return "General"
-        valid_case_types = ['VODC7', 'VODG9', 'VODB6', 'VODE6', 'VODJ7']
+        valid_case_types = ['VODC7-1', 'VODC7-2', 'VODC7-3','VODG9', 'VODB6', 'VODE6', 'VODJ7']
         
         if case_type not in valid_case_types:
             return "General"
@@ -283,32 +262,118 @@ def process_email_content(email_data: dict, system_instruction_file: str) -> dic
         "case_type": case_type
     }
 
-def generate_sql_query(system_prompt: str, case_type: str) -> str:
+
+def extract_case_and_asset_details(cleaned_content: str) -> dict:
+    """
+    Extract case number, case title, asset details, category, package id, network id,
+    AL ID, and partner ID from the cleaned content using the GenAI model.
+
+    :param cleaned_content: The cleaned HTML content as a string.
+    :return: A dictionary containing the extracted data.
+    """
+    # Initialize the GenAI client
+    client = initialize_genai_client()
+
+    # Construct prompts for the model to extract the required information
+    case_asset_prompt = f"""
+    Please extract the following information from the given content:
+    1. Case Number
+    2. Case Title
+    3. Domain - domain from sender email address						
+    4. Asset Details (including any file attachments if mentioned). 
+       Asset Details may include Provider Id, Series Name, Title, Season Number, Episode Number, Source Asset Id, LWED and other asset fields. 
+
+    Content:
+    {cleaned_content}
+    """
+
+    category_package_prompt = f"""
+    Please extract the following information from the given content:
+    1. Category - the Case Type
+    2. Package ID - Same with Package Asset ID or Package ID or Source Asset ID
+    3. Network ID - same with Network Name
+    4. ALID - Same with Package Asset ID or PAID or Package ID or Source Asset ID
+    5. Provider ID -  same with provider
+    6. Partner ID 
+
+    Get the information for the first asset in the list.
+
+    Content:
+    {cleaned_content}
+    """
+
+    # Call GenAI model to extract case and asset details
+    case_asset_response = call_genai_model(client, case_asset_prompt)
+    category_package_response = call_genai_model(client, category_package_prompt)
+
+    # Extract the relevant fields from the model's responses
+    extracted_data = {
+        "case_number": extract_data_from_response(case_asset_response, "Case Number"),
+        "case_title": extract_data_from_response(case_asset_response, "Case Title"),
+        "domain": extract_data_from_response(case_asset_response, "Domain"),
+        "asset_details": extract_data_from_response(case_asset_response, "Asset Details"),
+        "category": extract_data_from_response(category_package_response, "Category"),
+        "package_id": extract_data_from_response(category_package_response, "Package ID"),
+        "network_id": extract_data_from_response(category_package_response, "Network ID"),
+        "alid": extract_data_from_response(category_package_response, "ALID"),
+        "provider_id": extract_data_from_response(category_package_response, "Provider ID"),
+        "partner_id": extract_data_from_response(category_package_response, "Partner ID"),
+    }
+
+    return extracted_data
+
+def call_genai_model(client, prompt: str) -> dict:
+    """
+    Calls the GenAI model to extract information based on the provided prompt.
+
+    :param client: The GenAI client to use for making the request.
+    :param prompt: The prompt to send to the model for generating content.
+    :return: The model's response in JSON format.
+    """
     try:
-        client = initialize_genai_client()
-        contents = [
-            types.Content(
-                role="system",
-                parts=[types.Part(text=system_prompt)]
-            )
-        ]
-        
-        # Generate content with the AI model
-        result = client.models.generate_content(
-            model=config.MODEL_ID,
-            contents=contents,
+        # Make the API call to the GenAI model
+        response = client.models.generate_content(
+            model='gemini-2.0-flash-001',
+            contents=prompt,
             config=types.GenerateContentConfig(
-                temperature=1,
-                top_p=0.95,
-                max_output_tokens=8192,
+                system_instruction=prompt,
+                temperature=0.7,
+                max_output_tokens=1024,
                 response_modalities=["TEXT"]
             )
         )
-        return result.text
-    
+
+        # Extract the raw response from the model
+        response_text = response.candidates[0].content.parts[0].text.strip()
+
+        # Return the response as a dictionary (you can modify this to return only the extracted data)
+        return {"response_text": response_text}
+
     except Exception as e:
-        print(f"Error generating SQL query: {e}")
-        return None
+        print(f"Error during GenAI processing: {e}")
+        return {"error": str(e)}
+
+def extract_data_from_response(response: dict, field: str) -> str:
+    """
+    Extracts a specific field from the model's response.
+
+    :param response: The response from the GenAI model.
+    :param field: The field to extract from the response.
+    :return: The extracted value as a string.
+    """
+    if "response_text" in response:
+        # Extract data for the given field based on the field name (this is a simple placeholder logic)
+        response_text = response["response_text"]
+        print(f"Response: {response_text}")
+
+        # Search for the field in the response text (you may need a more advanced parser here)
+        field_pattern = f"{field}[:\s]+([^\n]+)"
+        match = re.search(field_pattern, response_text)
+
+        if match:
+            return match.group(1).strip()
+
+    return "Not found"
 
 def summarize_case_log(cleaned_content: str) -> str:
     """
@@ -351,7 +416,30 @@ def generate_operator_response(summary: str) -> dict:
     :param summary: The summary of the case.
     :return: A dictionary representing the operator's actionable response.
     """
-    return {
-        "role": "Operator",
-        "message": f"Operator actionable response based on the case: {summary}"
-    }
+    
+    client = initialize_genai_client()  # Initialize the GenAI client 
+
+    try:
+        # Call the model to summarize the content using the provided client
+        response = client.models.generate_content(
+            model=config.MODEL_ID,  # Use the specified model ID
+            contents=summary,  # Directly pass the summary here
+            config=types.GenerateContentConfig(
+                system_instruction="Generate an actionable response for an operator based on the case summary",
+                temperature=1,
+                top_p=0.95,
+                max_output_tokens=1024,  # Adjust token limits based on the expected summary length
+                response_modalities=["TEXT"],
+            ),
+        )
+
+        # Extract and return the summarized content from the response
+        operator_response = response.candidates[0].content.parts[0].text
+        print("Operator Actionable Response:", operator_response)
+
+        return operator_response
+
+    except Exception as e:
+        print(f"Error generating operator response: {e}")
+        return "An error occurred while generating operator response."
+    

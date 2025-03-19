@@ -1,33 +1,45 @@
 import uuid
-from sqlalchemy import Column, String, Integer, Text
+from sqlalchemy import Column, String, Integer, Text, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from database import Base
+from sqlalchemy.orm import relationship
 
-class CaseTypeScenario(Base):
-    __tablename__ = "case_type_scenarios"
+class CaseTypeResolution(Base):
+    __tablename__ = "case_type_resolution"
     
-    case_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    case_type = Column(String)
-    prompt_number = Column(Integer)
-    prompt_type = Column(String)
-    system_prompt = Column(String)
+    # Primary key for case_type_resolution
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     
+    # Case type identifier
+    case_type = Column(String(10), unique=True, nullable=False)
     
-    def __init__(self, case_type, prompt_number, prompt_type, system_prompt):
-        self.case_type = case_type
-        self.prompt_number = prompt_number
-        self.prompt_type = prompt_type
-        self.system_prompt = system_prompt
-
-class CasesCannedResponse(Base):
-    __tablename__ = "cases_canned_response"
-    
-    case_response_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    case_type = Column(String, nullable=False)
-    scenario = Column(String, nullable=False)
+    # Canned response for the case type
     canned_response = Column(Text, nullable=False)
     
-    def __init__(self, case_type, scenario, canned_response):
+    # Relationship to resolution_steps
+    resolution_steps = relationship("ResolutionSteps", backref="case_type_resolution", cascade="all, delete-orphan")
+    
+    def __init__(self, case_type, canned_response):
         self.case_type = case_type
-        self.scenario = scenario
         self.canned_response = canned_response
+
+
+class ResolutionSteps(Base):
+    __tablename__ = "resolution_steps"
+    
+    # Primary key for resolution_steps
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    
+    # Foreign key referencing case_type_resolution (case_type)
+    case_type = Column(String(10), ForeignKey("case_type_resolution.case_type"), nullable=False)
+    
+    # Step number to define order of resolution steps
+    step_number = Column(Integer, nullable=False)
+    
+    # Description of the resolution step
+    step_description = Column(Text, nullable=False)
+    
+    def __init__(self, case_type, step_number, step_description):
+        self.case_type = case_type
+        self.step_number = step_number
+        self.step_description = step_description
